@@ -6,6 +6,7 @@ const jwt = require("jsonwebtoken");
 const User = require("./models/User");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
+const ws = require("ws");
 
 dotenv.config();
 
@@ -37,7 +38,9 @@ app.get("/test", (req, res) => {
 });
 
 app.get("/profile", async (req, res) => {
-  const token = await req.cookies?.token;
+  const token = req.cookies?.token;
+  console.log("Token received:", token); // Log the token
+
   if (token) {
     jwt.verify(token, jwtSecret, {}, (err, userData) => {
       if (err) {
@@ -49,6 +52,7 @@ app.get("/profile", async (req, res) => {
   } else {
     console.warn("No token provided");
     res.status(401).json("No token provided");
+    console.log("No token received");
   }
 });
 
@@ -63,19 +67,28 @@ app.post("/login", async (req, res) => {
         jwtSecret,
         {},
         (err, token) => {
-          res.cookie("token", token).json({
+          if (err) {
+            console.error("JWT signing error:", err);
+            return res.status(500).json("Internal server error");
+          }
+          res.cookie("token", token, { sameSite: "none", secure: true }).json({
             id: foundUser._id,
           });
         }
       );
+    } else {
+      res.status(401).json("Incorrect password");
+      console.log("Incorrect password");
     }
+  } else {
+    res.status(404).json("User not found");
+    console.log("user not found");
   }
 });
 
 app.post("/register", async (req, res) => {
   const { username, password } = req.body;
   try {
-    // Hash the password
     const hashedPassword = await bcrypt.hashSync(password, bcryptSalt);
     const createdUser = await User.create({
       username: username,
@@ -93,7 +106,6 @@ app.post("/register", async (req, res) => {
           .json({
             _id: createdUser._id,
           });
-        //this samesite none means that the browser cant take the different site as the root
       }
     );
   } catch (err) {
@@ -102,6 +114,31 @@ app.post("/register", async (req, res) => {
   }
 });
 
-app.listen(4000, () => {
+const server = app.listen(4000, () => {
   console.log("Server is listening on port 4000");
+});
+
+const wss = new ws.WebSocketServer({ server });
+wss.on("connection", (connection) => {
+  console.log("Client wss connected");
+  wss.on("connection", (connection, req) => {
+    const cookies = req.headers.cookie;
+    if (cookies) {
+      const tokenCookieString = cookies
+        .split(";")
+        .find((str) => str.startWith("token="));
+      if (tokenCookieString) {
+        const token = tokenCookieString.split("=")[1];
+        if (token) {
+          jwt.verify(token, jwtSecret, {}, (err, userData) => {
+            if (err) {
+              console.error("JWT verification error:", err);
+              return;
+            }
+            console.log(`User ${userData.username} connected to the chat.`);
+          });
+        }
+      }
+    }
+  });
 });

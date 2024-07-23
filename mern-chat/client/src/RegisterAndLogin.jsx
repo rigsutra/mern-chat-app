@@ -11,20 +11,17 @@ export default function RegisterAndLogin() {
   async function handleSubmit(e) {
     e.preventDefault();
     const url = isLoggedInOrRegister === "Register" ? "register" : "login";
-    // to prevent the form from submitting the data and refreshing the page
-
     try {
-      const { data } = await axios.post(url, { username, password });
+      const { data } = await axios.post(
+        `http://localhost:4000/${url}`,
+        { username, password },
+        { withCredentials: true }
+      );
       setLoggedInUsername(username);
-      setId(data.id); // this will set the id in the UserContext which is used to get the id in other components.
+      setId(data.id);
     } catch (err) {
       console.error(err);
-      // handle the error here
     }
-
-    // this will send the data and this will send the data to the backend.
-
-    // if this thing send the data then we can get the data in const or in a { object } so you can have any of it here it is not required
   }
 
   return (
@@ -40,7 +37,7 @@ export default function RegisterAndLogin() {
         <input
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          type="text"
+          type="password"
           placeholder="password"
           className="block w-full rounded-sm p-2 mb-2 border"
         />
@@ -51,16 +48,21 @@ export default function RegisterAndLogin() {
           {isLoggedInOrRegister === "Register" && (
             <div>
               Already a member?
-              <button onClick={() => setIsLoggedInOrRegister("Login")}>
+              <button
+                type="button"
+                onClick={() => setIsLoggedInOrRegister("Login")}
+              >
                 Login Here
               </button>
             </div>
           )}
-
           {isLoggedInOrRegister === "Login" && (
             <div>
               Not a member?
-              <button onClick={() => setIsLoggedInOrRegister("Register")}>
+              <button
+                type="button"
+                onClick={() => setIsLoggedInOrRegister("Register")}
+              >
                 Register
               </button>
             </div>
