@@ -119,26 +119,37 @@ const server = app.listen(4000, () => {
 });
 
 const wss = new ws.WebSocketServer({ server });
-wss.on("connection", (connection) => {
+wss.on("connection", (connection, req) => {
   console.log("Client wss connected");
-  wss.on("connection", (connection, req) => {
-    const cookies = req.headers.cookie;
-    if (cookies) {
-      const tokenCookieString = cookies
-        .split(";")
-        .find((str) => str.startWith("token="));
-      if (tokenCookieString) {
-        const token = tokenCookieString.split("=")[1];
-        if (token) {
-          jwt.verify(token, jwtSecret, {}, (err, userData) => {
-            if (err) {
-              console.error("JWT verification error:", err);
-              return;
-            }
-            console.log(`User ${userData.username} connected to the chat.`);
-          });
-        }
+  const cookies = req.headers.cookie;
+  if (cookies) {
+    const tokenCookieString = cookies
+      .split(";")
+      .find((str) => str.startsWith("token="));
+    if (tokenCookieString) {
+      const token = tokenCookieString.split("=")[1];
+      if (token) {
+        jwt.verify(token, jwtSecret, {}, (err, userData) => {
+          if (err) {
+            console.error("JWT verification error:", err);
+            return;
+          }
+          const { userId, username } = userData;
+          connection.userId = userId;
+          connection.username = username;
+        });
       }
     }
+  }
+  // Send online users to all clients
+  [...wss.clients].forEach((client) => {
+    client.send(
+      JSON.stringify({
+        online: [...wss.clients].map((c) => ({
+          userId: c.userId,
+          username: c.username,
+        })),
+      })
+    );
   });
 });
