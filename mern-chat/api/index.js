@@ -4,6 +4,7 @@ const cookieParser = require("cookie-parser");
 const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const User = require("./models/User");
+const Message = require("./models/Message");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const ws = require("ws");
@@ -120,9 +121,13 @@ const server = app.listen(4000, () => {
 
 const wss = new ws.WebSocketServer({ server });
 wss.on("connection", (connection, req) => {
+  // read username and the Id from the cookies for this connection
+
   console.log("Client wss connected");
+
   const cookies = req.headers.cookie;
   if (cookies) {
+    // this is to clear the cookies from the its name as it is written in the token = "" form but we only want the cookies value noting else.
     const tokenCookieString = cookies
       .split(";")
       .find((str) => str.startsWith("token="));
@@ -141,7 +146,34 @@ wss.on("connection", (connection, req) => {
       }
     }
   }
-  // Send online users to all clients
+
+  connection.on("message", async (message) => {
+    const messageData = JSON.parse(message.toString());
+    const { recipient, text } = messageData;
+    console.log(messageData);
+    if (recipient && text) {
+      // this will return promise so we need to add await
+      const messageDoc = await Message.create({
+        sender: connection.userId,
+        recipient: recipient,
+        text: text,
+      });
+
+      [...wss.clients]
+        .filter((c) => c.userId === recipient)
+        .forEach((c) => {
+          c.send(
+            JSON.stringify({
+              text,
+              sender: connection.userId,
+              id: messageDoc._id,
+              recipient,
+            })
+          );
+        });
+    }
+  });
+  // Send online users to all clients and notify them if someone connects
   [...wss.clients].forEach((client) => {
     client.send(
       JSON.stringify({
