@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import Avatar from "./Avatar";
 import Logo from "./Logo";
 import { uniqBy } from "lodash";
+import axios from "axios";
 
 import { UserContext } from "./UserContext";
 
@@ -16,10 +17,21 @@ export default function Chat() {
   const divUnderMessages = useRef();
 
   useEffect(() => {
+    connnectToWs();
+  }, []);
+
+  // this function is to reconnect the connection with the websocket as any thing changes in the index.js the file gets reloaded and the connection gets lost so we use thsi to reconnect.
+  function connnectToWs() {
     const ws = new WebSocket("ws://localhost:4000");
     setWs(ws);
     ws.addEventListener("message", handleMessage);
-  }, []);
+    ws.addEventListener("close", () => {
+      setTimeout(() => {
+        console.log("Disconnected , Trying to reconnect");
+        connnectToWs();
+      }, 1000);
+    });
+  }
 
   function showOnLinePeople(peopleArray) {
     const people = {};
@@ -38,6 +50,8 @@ export default function Chat() {
     }
   }
 
+  // sending the message to the server
+
   function sendMessage(event) {
     event.preventDefault();
     ws.send(
@@ -53,7 +67,7 @@ export default function Chat() {
         text: newMessagesText,
         sender: id,
         recipient: selectedUsersId,
-        id: Date.now(),
+        _id: Date.now(),
       },
     ]);
   }
@@ -65,40 +79,47 @@ export default function Chat() {
     }
   }, [messages]);
 
+  useEffect(() => {
+    if (selectedUsersId) {
+      axios.get("/messages/" + selectedUsersId).then((res) => {
+        const { data } = res;
+        setMessages(data);
+      });
+    }
+  }, [selectedUsersId]);
+
   // this is to delete our user name from the chat list shown on the display
   const onlinePeopleExcludeOurUser = { ...onlinePeople };
   delete onlinePeopleExcludeOurUser[id];
 
   // the lodash libary is used to keep track of duplicates messages for the user and then get rid of them.
-  const messagesWithoutDupes = uniqBy(messages, "id");
-  console.log(messagesWithoutDupes);
+  const messagesWithoutDupes = uniqBy(messages, "_id");
 
   return (
     <div className="flex h-screen">
-      <div className="bg-white w-1/3 ">
+      <div className="bg-white w-full md:w-1/3">
         <Logo />
         {Object.keys(onlinePeopleExcludeOurUser).map((userId) => (
           <div
             key={userId}
             onClick={() => setSelectedUsersId(userId)}
             className={
-              "border-b border-gray-100  flex items-center gap-2  cursor-pointer " +
-              (userId === selectedUsersId ? "bg-blue-50" : " ")
+              "border-b border-gray-100 flex items-center gap-2 cursor-pointer " +
+              (userId === selectedUsersId ? "bg-blue-50" : "")
             }
           >
             {userId === selectedUsersId && (
               <div className="w-1 bg-blue-500 h-12 rounded-r-md"></div>
             )}
-
-            <div className="flex gap-2 py-2 pl-4 items-center ">
+            <div className="flex gap-2 py-2 pl-4 items-center">
               <Avatar username={onlinePeople[userId]} userId={userId} />
               <span className="text-gray-800">{onlinePeople[userId]}</span>
             </div>
           </div>
         ))}
       </div>
-      <div className="bg-blue-50 w-2/3 p-2 flex flex-col">
-        <div className="flex-grow">
+      <div className="bg-blue-50 w-full md:w-2/3 p-2 flex flex-col">
+        <div className="flex-grow relative">
           {!selectedUsersId && (
             <div className="flex h-full items-center justify-center">
               <div className="text-gray-400">
@@ -108,29 +129,27 @@ export default function Chat() {
           )}
           {!!selectedUsersId && (
             <div className="relative h-full">
-              <div className="overflow-y-scroll position-absolute top-0 left-0 right-0 bottom-2">
-                {messagesWithoutDupes.map((message) => {
-                  return (
-                    // Add return statement
+              <div className="overflow-y-scroll h-full absolute top-0 left-0 right-0 bottom-2">
+                {messagesWithoutDupes.map((message) => (
+                  <div
+                    className={
+                      message.sender === id ? "text-right" : "text-left"
+                    }
+                    key={message._id}
+                  >
                     <div
                       className={
-                        message.sender === id ? "text-right" : "text-left"
+                        "text-left inline-block p-2 my-2 rounded-md text-sm " +
+                        (message.sender === id
+                          ? "bg-blue-500 text-white"
+                          : "bg-white text-gray-500") +
+                        "text-sm md:text-base"
                       }
-                      key={message.id}
                     >
-                      <div
-                        className={
-                          "text-left inline-block p-2 my-2 rounded-md text-sm " +
-                          (message.sender === id
-                            ? "bg-blue-500 text-white"
-                            : "bg-white text-gray-500")
-                        }
-                      >
-                        {message.text}
-                      </div>
+                      {message.text}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
                 <div ref={divUnderMessages}></div>
               </div>
             </div>
@@ -143,7 +162,7 @@ export default function Chat() {
               value={newMessagesText}
               onChange={(e) => setNewMessagesText(e.target.value)}
               placeholder="Type your message here..."
-              className="bg-white border p-2 flex-grow rounded-sm fixed-bottom"
+              className="bg-white border p-2 flex-grow rounded-sm"
             />
             <button className="bg-blue-500 p-2 text-white rounded-sm">
               <svg
