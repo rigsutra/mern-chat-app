@@ -1,18 +1,14 @@
 import PropTypes from "prop-types";
 
-export default function Avatar({ userId, username }) {
+export default function Avatar({ userId, username, online }) {
   const colors = [
     "bg-teal-200",
     "bg-purple-200",
     "bg-yellow-200",
-
     "bg-red-200",
     "bg-blue-200",
-
     "bg-green-200",
-    // Fixed typo here
-
-    "bg-teal-200",
+    "bg-orange-200", // Replaced duplicate color
   ];
 
   const userIdBase10 = parseInt(userId, 16);
@@ -20,10 +16,20 @@ export default function Avatar({ userId, username }) {
   const color = colors[colorIndex];
 
   return (
-    <div className={"w-8 h-8 rounded-full flex items-center " + color}>
-      <div className="text-center w-full  opacity-70">
-        {username ? username[0] : "?"}
+    <div
+      className={
+        "w-8 h-8 rounded-full flex items-center " + color + " relative"
+      }
+    >
+      <div className="text-center w-full opacity-70">
+        {username ? username[0] : "-"} {/* Changed fallback character */}
       </div>
+      {online && (
+        <div className="absolute w-3 h-3 bg-green-400 -bottom-1 -right-1 rounded-full border border-white"></div>
+      )}
+      {!online && (
+        <div className="absolute w-3 h-3 bg-gray-400 -bottom-1 -right-1 rounded-full border border-white"></div>
+      )}
     </div>
   );
 }
@@ -31,4 +37,5 @@ export default function Avatar({ userId, username }) {
 Avatar.propTypes = {
   userId: PropTypes.string.isRequired,
   username: PropTypes.string.isRequired,
+  online: PropTypes.bool,
 };
