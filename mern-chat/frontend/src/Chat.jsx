@@ -1,37 +1,26 @@
-import { useState, useContext, useRef } from "react";
-import { useEffect } from "react";
+import { useState, useContext, useEffect } from "react";
 import Avatar from "./Avatar";
 import Logo from "./Logo";
 import { uniqBy } from "lodash";
-import axios from "axios";
-
 import { UserContext } from "./UserContext";
 
 export default function Chat() {
   const [ws, setWs] = useState(null);
   const [onlinePeople, setOnlinePeople] = useState({});
   const [selectedUsersId, setSelectedUsersId] = useState(null);
-  const [newMessagesText, setNewMessagesText] = useState([]);
+  const [newMessagesText, setNewMessagesText] = useState(""); // Changed to string
   const [messages, setMessages] = useState([]);
   const { id } = useContext(UserContext);
-  const divUnderMessages = useRef();
 
   useEffect(() => {
-    connnectToWs();
-  }, []);
-
-  // this function is to reconnect the connection with the websocket as any thing changes in the index.js the file gets reloaded and the connection gets lost so we use thsi to reconnect.
-  function connnectToWs() {
-    const ws = new WebSocket("ws://localhost:4000");
+    const ws = new WebSocket("ws://localhost:4040");
     setWs(ws);
     ws.addEventListener("message", handleMessage);
-    ws.addEventListener("close", () => {
-      setTimeout(() => {
-        console.log("Disconnected , Trying to reconnect");
-        connnectToWs();
-      }, 1000);
-    });
-  }
+
+    return () => {
+      ws.close(); // Cleanup on unmount
+    };
+  }, []);
 
   function showOnLinePeople(peopleArray) {
     const people = {};
@@ -50,54 +39,34 @@ export default function Chat() {
     }
   }
 
-  // sending the message to the server
-
   function sendMessage(event) {
     event.preventDefault();
-    ws.send(
-      JSON.stringify({
-        recipient: selectedUsersId,
-        text: newMessagesText,
-      })
-    );
-    setNewMessagesText("");
-    setMessages((prev) => [
-      ...prev,
-      {
-        text: newMessagesText,
-        sender: id,
-        recipient: selectedUsersId,
-        _id: Date.now(),
-      },
-    ]);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      // Check if WebSocket is open
+      ws.send(
+        JSON.stringify({
+          recipient: selectedUsersId,
+          text: newMessagesText,
+        })
+      );
+      setMessages((prev) => [
+        ...prev,
+        { text: newMessagesText, sender: id, recipient: selectedUsersId },
+      ]);
+      setNewMessagesText(""); // Clear input after sending
+    } else {
+      console.error("WebSocket is not open. Current state:", ws.readyState);
+    }
   }
 
-  useEffect(() => {
-    const div = divUnderMessages.current;
-    if (div) {
-      div.scrollIntoView({ behavior: "smooth", block: "end" });
-    }
-  }, [messages]);
-
-  useEffect(() => {
-    if (selectedUsersId) {
-      axios.get("/messages/" + selectedUsersId).then((res) => {
-        const { data } = res;
-        setMessages(data);
-      });
-    }
-  }, [selectedUsersId]);
-
-  // this is to delete our user name from the chat list shown on the display
   const onlinePeopleExcludeOurUser = { ...onlinePeople };
   delete onlinePeopleExcludeOurUser[id];
 
-  // the lodash libary is used to keep track of duplicates messages for the user and then get rid of them.
-  const messagesWithoutDupes = uniqBy(messages, "_id");
+  const messagesWithoutDupes = uniqBy(messages, "id");
 
   return (
     <div className="flex h-screen">
-      <div className="bg-white w-full md:w-1/3">
+      <div className="bg-white w-1/3 ">
         <Logo />
         {Object.keys(onlinePeopleExcludeOurUser).map((userId) => (
           <div
@@ -111,15 +80,15 @@ export default function Chat() {
             {userId === selectedUsersId && (
               <div className="w-1 bg-blue-500 h-12 rounded-r-md"></div>
             )}
-            <div className="flex gap-2 py-2 pl-4 items-center">
+            <div className="flex gap-2 py-2 pl-4 items-center ">
               <Avatar username={onlinePeople[userId]} userId={userId} />
               <span className="text-gray-800">{onlinePeople[userId]}</span>
             </div>
           </div>
         ))}
       </div>
-      <div className="bg-blue-50 w-full md:w-2/3 p-2 flex flex-col">
-        <div className="flex-grow relative">
+      <div className="bg-blue-50 w-2/3 p-2 flex flex-col">
+        <div className="flex-grow">
           {!selectedUsersId && (
             <div className="flex h-full items-center justify-center">
               <div className="text-gray-400">
@@ -128,30 +97,24 @@ export default function Chat() {
             </div>
           )}
           {!!selectedUsersId && (
-            <div className="relative h-full">
-              <div className="overflow-y-scroll h-full absolute top-0 left-0 right-0 bottom-2">
-                {messagesWithoutDupes.map((message) => (
-                  <div
-                    className={
-                      message.sender === id ? "text-right" : "text-left"
-                    }
-                    key={message._id}
-                  >
+            <div className="overflow-scroll">
+              {messagesWithoutDupes.map((message) => {
+                return (
+                  // Add return statement
+                  <div key={message.id}>
                     <div
                       className={
-                        "text-left inline-block p-2 my-2 rounded-md text-sm " +
+                        "inline-block p-2 my-2 rounded-sm text-sm " +
                         (message.sender === id
                           ? "bg-blue-500 text-white"
-                          : "bg-white text-gray-500") +
-                        "text-sm md:text-base"
+                          : "bg-white text-gray-500")
                       }
                     >
                       {message.text}
                     </div>
                   </div>
-                ))}
-                <div ref={divUnderMessages}></div>
-              </div>
+                );
+              })}
             </div>
           )}
         </div>
