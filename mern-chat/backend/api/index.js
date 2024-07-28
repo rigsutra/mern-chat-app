@@ -46,33 +46,28 @@ app.get("/test", (req, res) => {
 });
 
 async function getUserDataFromRequest(req) {
-  const token = req.cookies?.token;
-  if (!token) throw new Error("No token provided");
   return new Promise((resolve, reject) => {
-    jwt.verify(token, jwtSecret, {}, (err, userData) => {
-      if (err) {
-        reject(new Error("Invalid token"));
-      } else {
+    const token = req.cookies?.token;
+    if (token) {
+      jwt.verify(token, jwtSecret, {}, (err, userData) => {
+        if (err) throw err;
         resolve(userData);
-      }
-    });
+      });
+    } else {
+      reject("no token provided");
+    }
   });
 }
 
 app.get("/people", async (req, res) => {
-  try {
-    const users = await User.find({}, { _id: 1, username: 1 });
-    res.json(users);
-  } catch (error) {
-    res.status(500).json("Error retrieving users");
-  }
+  const users = await User.find({}, { _id: 1, username: 1 });
+  res.json(users);
 });
 
 app.get("/messages/:userId", async (req, res) => {
   const { userId } = req.params;
-  try {
-    const userData = await getUserDataFromRequest(req);
-    const ourUserId = userData.userId;
+  const userData = await getUserDataFromRequest(req);
+  const ourUserId = userData.userId;
 
     const messages = await Message.find({
       sender: { $in: [userId, ourUserId] },
@@ -87,55 +82,54 @@ app.get("/messages/:userId", async (req, res) => {
 
 app.get("/profile", async (req, res) => {
   const token = req.cookies?.token;
+  console.log("Token received:", token); // Log the token
+
   if (token) {
     jwt.verify(token, jwtSecret, {}, (err, userData) => {
       if (err) {
+        console.error("JWT verification error:", err);
         return res.status(403).json("Invalid token");
       }
       res.json(userData);
     });
   } else {
+    console.warn("No token provided");
     res.status(401).json("No token provided");
+    console.log("No token received");
   }
 });
 
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
-  try {
-    const foundUser = await User.findOne({ username });
-    if (foundUser) {
-      const passOk = bcrypt.compareSync(password, foundUser.password);
-      if (passOk) {
-        jwt.sign(
-          { userId: foundUser._id, username },
-          jwtSecret,
-          {},
-          (err, token) => {
-            if (err) {
-              return res.status(500).json("Internal server error");
-            }
-            res
-              .cookie("token", token, { sameSite: "none", secure: true })
-              .json({
-                id: foundUser._id,
-              });
+  const foundUser = await User.findOne({ username });
+  if (foundUser) {
+    const passOk = bcrypt.compareSync(password, foundUser.password);
+    if (passOk) {
+      jwt.sign(
+        { userId: foundUser._id, username },
+        jwtSecret,
+        {},
+        (err, token) => {
+          if (err) {
+            return res.status(500).json("Internal server error");
           }
-        );
-      } else {
-        res.status(401).json("Incorrect password");
-      }
+          res.cookie("token", token, { sameSite: "none", secure: true }).json({
+            id: foundUser._id,
+          });
+        }
+      );
     } else {
-      res.status(404).json("User not found");
+      res.status(401).json("Incorrect password");
     }
-  } catch (error) {
-    res.status(500).json("Error logging in");
+  } else {
+    res.status(404).json("User not found");
   }
 });
 
 app.post("/register", async (req, res) => {
   const { username, password } = req.body;
   try {
-    const hashedPassword = await bcrypt.hash(password, bcryptSalt);
+    const hashedPassword = await bcrypt.hashSync(password, bcryptSalt);
     const createdUser = await User.create({
       username: username,
       password: hashedPassword,
@@ -156,36 +150,26 @@ app.post("/register", async (req, res) => {
     );
   } catch (err) {
     console.error(err);
-    res.status(500).json("Error creating user");
+    res.status(500).json("error");
   }
 });
 
 const server = app.listen(4040, () => {
-  console.log("Server is listening on port 4040");
+  console.log("Server is listening on port 4000");
 });
 
 const wss = new ws.WebSocketServer({ server });
 wss.on("connection", (connection, req) => {
-  function notifyAboutOnlinePeople() {
-    [...wss.clients].forEach((client) => {
-      client.send(
-        JSON.stringify({
-          online: [...wss.clients].map((c) => ({
-            userId: c.userId,
-            username: c.username,
-          })),
-        })
-      );
-    });
-  }
+  // read username and the Id from the cookies for this connection
 
   console.log("Client wss connected");
 
   const cookies = req.headers.cookie;
   if (cookies) {
+    // this is to clear the cookies from the its name as it is written in the token = "" form but we only want the cookies value noting else.
     const tokenCookieString = cookies
       .split(";")
-      .find((str) => str.trim().startsWith("token="));
+      .find((str) => str.startsWith("token="));
     if (tokenCookieString) {
       const token = tokenCookieString.split("=")[1];
       if (token) {
@@ -197,47 +181,46 @@ wss.on("connection", (connection, req) => {
           const { userId, username } = userData;
           connection.userId = userId;
           connection.username = username;
-          notifyAboutOnlinePeople();
         });
       }
     }
   }
 
   connection.on("message", async (message) => {
-    console.log("Received message: ", message);
     const messageData = JSON.parse(message.toString());
     const { recipient, text } = messageData;
+    console.log(messageData);
     if (recipient && text) {
-      try {
-        const messageDoc = await Message.create({
-          sender: connection.userId,
-          recipient: recipient,
-          text: text,
-        });
+      // this will return promise so we need to add await
+      const messageDoc = await Message.create({
+        sender: connection.userId,
+        recipient: recipient,
+        text: text,
+      });
 
-        [...wss.clients]
-          .filter(
-            (c) => c.userId === recipient || c.userId === connection.userId
-          )
-          .forEach((c) => {
-            c.send(
-              JSON.stringify({
-                text,
-                sender: connection.userId,
-                _id: messageDoc._id,
-                recipient,
-              })
-            );
-          });
-      } catch (error) {
-        console.error("Error saving message to database:", error);
-      }
+      [...wss.clients]
+        .filter((c) => c.userId === recipient)
+        .forEach((c) => {
+          c.send(
+            JSON.stringify({
+              text,
+              sender: connection.userId,
+              _id: messageDoc._id,
+              recipient,
+            })
+          );
+        });
     }
   });
-
-  connection.on("close", () => {
-    notifyAboutOnlinePeople();
+  // Send online users to all clients and notify them if someone connects
+  [...wss.clients].forEach((client) => {
+    client.send(
+      JSON.stringify({
+        online: [...wss.clients].map((c) => ({
+          userId: c.userId,
+          username: c.username,
+        })),
+      })
+    );
   });
-
-  notifyAboutOnlinePeople();
 });

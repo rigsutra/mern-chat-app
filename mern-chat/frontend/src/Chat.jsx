@@ -2,18 +2,15 @@ import { useContext, useEffect, useRef, useState, useCallback } from "react";
 import Logo from "./Logo";
 import { UserContext } from "./UserContext";
 import { uniqBy } from "lodash";
-import axios from "axios";
-import Contact from "./Contact";
+import { UserContext } from "./UserContext";
 
 export default function Chat() {
   const [ws, setWs] = useState(null);
   const [onlinePeople, setOnlinePeople] = useState({});
-  const [offlinePeople, setOfflinePeople] = useState({});
-  const [selectedUserId, setSelectedUserId] = useState(null);
-  const [newMessageText, setNewMessageText] = useState("");
+  const [selectedUsersId, setSelectedUsersId] = useState(null);
+  const [newMessagesText, setNewMessagesText] = useState(""); // Changed to string
   const [messages, setMessages] = useState([]);
-  const { username, id, setId, setUsername } = useContext(UserContext);
-  const divUnderMessages = useRef();
+  const { id } = useContext(UserContext);
 
   useEffect(() => {
     connectToWs();
@@ -173,10 +170,10 @@ export default function Chat() {
     }
   }, [selectedUserId]);
 
-  const onlinePeopleExclOurUser = { ...onlinePeople };
-  delete onlinePeopleExclOurUser[id];
+  const onlinePeopleExcludeOurUser = { ...onlinePeople };
+  delete onlinePeopleExcludeOurUser[id];
 
-  const messagesWithoutDupes = uniqBy(messages, "_id");
+  const messagesWithoutDupes = uniqBy(messages, "id");
 
   return (
     <div className="flex h-screen">
@@ -231,28 +228,24 @@ export default function Chat() {
           </button>
         </div>
       </div>
-      <div className="flex flex-col bg-blue-50 w-2/3 p-2">
+      <div className="bg-blue-50 w-2/3 p-2 flex flex-col">
         <div className="flex-grow">
-          {!selectedUserId && (
-            <div className="flex h-full flex-grow items-center justify-center">
-              <div className="text-gray-300">
-                &larr; Select a person from the sidebar
+          {!selectedUsersId && (
+            <div className="flex h-full items-center justify-center">
+              <div className="text-gray-400">
+                &larr; Select a Contact from the SideBar
               </div>
             </div>
           )}
-          {!!selectedUserId && (
-            <div className="relative h-full">
-              <div className="overflow-y-scroll absolute top-0 left-0 right-0 bottom-2">
-                {messagesWithoutDupes.map((message) => (
-                  <div
-                    key={message._id}
-                    className={
-                      message.sender === id ? "text-right" : "text-left"
-                    }
-                  >
+          {!!selectedUsersId && (
+            <div className="overflow-scroll">
+              {messagesWithoutDupes.map((message) => {
+                return (
+                  // Add return statement
+                  <div key={message.id}>
                     <div
                       className={
-                        "text-left inline-block p-2 my-2 rounded-md text-sm " +
+                        "inline-block p-2 my-2 rounded-sm text-sm " +
                         (message.sender === id
                           ? "bg-blue-500 text-white"
                           : "bg-white text-gray-500")
@@ -293,13 +286,12 @@ export default function Chat() {
                       )}
                     </div>
                   </div>
-                ))}
-                <div ref={divUnderMessages}></div>
-              </div>
+                );
+              })}
             </div>
           )}
         </div>
-        {!!selectedUserId && (
+        {!!selectedUsersId && (
           <form className="flex gap-2" onSubmit={sendMessage}>
             <input
               type="text"
