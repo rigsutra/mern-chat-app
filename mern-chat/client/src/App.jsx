@@ -5,7 +5,7 @@ import { UserContext } from "./UserContext";
 import Routes from "./Routes";
 
 const App = () => {
-  axios.defaults.baseURL = "http://localhost:4000";
+  axios.defaults.baseURL = "http://localhost:4040";
   // this is to set the default ural now that in the othe pages you juast have to give the page url name to that axios palce
   axios.defaults.withCredentials = true;
   const { username } = useContext(UserContext);
