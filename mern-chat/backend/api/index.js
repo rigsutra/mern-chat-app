@@ -15,19 +15,26 @@ const app = express();
 app.use(express.json());
 app.use(cookieParser());
 
+const { ORIGIN_URL, JWT_SECRET, MONGO_URL } = process.env;
+console.log(process.env.MONGO_URL);
+
+if (!ORIGIN_URL || !JWT_SECRET || !MONGO_URL) {
+  console.error("Missing necessary environment variables. Exiting...");
+  process.exit(1);
+}
+
 app.use(
   cors({
     credentials: true,
-    origin: process.env.ORIGIN_URL,
+    origin: ORIGIN_URL,
   })
 );
 
-const jwtSecret = process.env.JWT_SECRET;
+const jwtSecret = JWT_SECRET;
 const bcryptSalt = bcrypt.genSaltSync(10);
 
-// Improved mongoose connection with options
 mongoose
-  .connect(process.env.MONGO_URL)
+  .connect(MONGO_URL)
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => {
     console.error("Error connecting to MongoDB:", err);
@@ -53,21 +60,29 @@ async function getUserDataFromRequest(req) {
 }
 
 app.get("/people", async (req, res) => {
-  const users = await User.find({}, { _id: 1, username: 1 });
-  res.json(users);
+  try {
+    const users = await User.find({}, { _id: 1, username: 1 });
+    res.json(users);
+  } catch (error) {
+    res.status(500).json("Error retrieving users");
+  }
 });
 
 app.get("/messages/:userId", async (req, res) => {
   const { userId } = req.params;
-  const userData = await getUserDataFromRequest(req);
-  const ourUserId = userData.userId;
+  try {
+    const userData = await getUserDataFromRequest(req);
+    const ourUserId = userData.userId;
 
-  const messages = await Message.find({
-    sender: { $in: [userId, ourUserId] },
-    recipient: { $in: [userId, ourUserId] },
-  }).sort({ createdAt: 1 });
+    const messages = await Message.find({
+      sender: { $in: [userId, ourUserId] },
+      recipient: { $in: [userId, ourUserId] },
+    }).sort({ createdAt: 1 });
 
-  res.json(messages);
+    res.json(messages);
+  } catch (error) {
+    res.status(500).json("Error retrieving messages");
+  }
 });
 
 app.get("/profile", async (req, res) => {
@@ -86,28 +101,34 @@ app.get("/profile", async (req, res) => {
 
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
-  const foundUser = await User.findOne({ username });
-  if (foundUser) {
-    const passOk = bcrypt.compareSync(password, foundUser.password);
-    if (passOk) {
-      jwt.sign(
-        { userId: foundUser._id, username },
-        jwtSecret,
-        {},
-        (err, token) => {
-          if (err) {
-            return res.status(500).json("Internal server error");
+  try {
+    const foundUser = await User.findOne({ username });
+    if (foundUser) {
+      const passOk = bcrypt.compareSync(password, foundUser.password);
+      if (passOk) {
+        jwt.sign(
+          { userId: foundUser._id, username },
+          jwtSecret,
+          {},
+          (err, token) => {
+            if (err) {
+              return res.status(500).json("Internal server error");
+            }
+            res
+              .cookie("token", token, { sameSite: "none", secure: true })
+              .json({
+                id: foundUser._id,
+              });
           }
-          res.cookie("token", token, { sameSite: "none", secure: true }).json({
-            id: foundUser._id,
-          });
-        }
-      );
+        );
+      } else {
+        res.status(401).json("Incorrect password");
+      }
     } else {
-      res.status(401).json("Incorrect password");
+      res.status(404).json("User not found");
     }
-  } else {
-    res.status(404).json("User not found");
+  } catch (error) {
+    res.status(500).json("Error logging in");
   }
 });
 
@@ -140,7 +161,7 @@ app.post("/register", async (req, res) => {
 });
 
 const server = app.listen(4040, () => {
-  console.log("Server is listening on port 4000");
+  console.log("Server is listening on port 4040");
 });
 
 const wss = new ws.WebSocketServer({ server });
