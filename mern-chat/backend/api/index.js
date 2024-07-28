@@ -20,7 +20,7 @@ app.use(cookieParser());
 app.use(
   cors({
     credentials: true,
-    origin: process.env.ORIGIN_URL,
+   origin: `'https://your-vercel-url.vercel.app'`,
   })
 );
 
