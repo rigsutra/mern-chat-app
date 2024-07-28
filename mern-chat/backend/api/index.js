@@ -7,9 +7,8 @@ const User = require("./models/User");
 const Message = require("./models/Message");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
-const { WebSocketServer } = require("ws"); // Correct import
+const ws = require("ws");
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
@@ -35,35 +34,27 @@ mongoose
     process.exit(1); // Exit process with failure
   });
 
-// Test route
 app.get("/test", (req, res) => {
   res.json("test ok");
 });
 
-// Function to get user data from request
 async function getUserDataFromRequest(req) {
-  const token = req.cookies?.token;
-  if (!token) throw new Error("No token provided");
   return new Promise((resolve, reject) => {
-    jwt.verify(token, jwtSecret, {}, (err, userData) => {
-      if (err) {
-        reject(new Error("Invalid token"));
-      } else {
+    const token = req.cookies?.token;
+    if (token) {
+      jwt.verify(token, jwtSecret, {}, (err, userData) => {
+        if (err) throw err;
         resolve(userData);
-      }
-    });
+      });
+    } else {
+      reject("no token provided");
+    }
   });
 }
 
-// Get list of users
-app.get("/people", async (req, res) => {
-  const users = await User.find({}, { _id: 1, username: 1 });
-  res.json(users);
-});
-
-// Get messages for a specific user
 app.get("/messages/:userId", async (req, res) => {
   const { userId } = req.params;
+  // our userId is in the token
   const userData = await getUserDataFromRequest(req);
   const ourUserId = userData.userId;
 
@@ -75,22 +66,25 @@ app.get("/messages/:userId", async (req, res) => {
   res.json(messages);
 });
 
-// Get profile information
 app.get("/profile", async (req, res) => {
   const token = req.cookies?.token;
+  console.log("Token received:", token); // Log the token
+
   if (token) {
     jwt.verify(token, jwtSecret, {}, (err, userData) => {
       if (err) {
+        console.error("JWT verification error:", err);
         return res.status(403).json("Invalid token");
       }
       res.json(userData);
     });
   } else {
+    console.warn("No token provided");
     res.status(401).json("No token provided");
+    console.log("No token received");
   }
 });
 
-// User login
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
   const foundUser = await User.findOne({ username });
@@ -103,6 +97,7 @@ app.post("/login", async (req, res) => {
         {},
         (err, token) => {
           if (err) {
+            console.error("JWT signing error:", err);
             return res.status(500).json("Internal server error");
           }
           res.cookie("token", token, { sameSite: "none", secure: true }).json({
@@ -112,17 +107,18 @@ app.post("/login", async (req, res) => {
       );
     } else {
       res.status(401).json("Incorrect password");
+      console.log("Incorrect password");
     }
   } else {
     res.status(404).json("User not found");
+    console.log("user not found");
   }
 });
 
-// User registration
 app.post("/register", async (req, res) => {
   const { username, password } = req.body;
   try {
-    const hashedPassword = await bcrypt.hash(password, bcryptSalt);
+    const hashedPassword = await bcrypt.hashSync(password, bcryptSalt);
     const createdUser = await User.create({
       username: username,
       password: hashedPassword,
@@ -143,37 +139,26 @@ app.post("/register", async (req, res) => {
     );
   } catch (err) {
     console.error(err);
-    res.status(500).json("Error creating user");
+    res.status(500).json("error");
   }
 });
 
-// Start the server
-const server = app.listen(4040, () => {
-  console.log("Server is listening on port 4040");
+const server = app.listen(4000, () => {
+  console.log("Server is listening on port 4000");
 });
 
-// WebSocket server setup
-const wss = new WebSocketServer({ server });
-
+const wss = new ws.WebSocketServer({ server });
 wss.on("connection", (connection, req) => {
-  console.log("Client wss connected");
+  // read username and the Id from the cookies for this connection
 
-  function notifyAboutOnlinePeople() {
-    const onlinePeople = [...wss.clients].map((c) => ({
-      userId: c.userId,
-      username: c.username,
-    }));
-    console.log("Online people:", onlinePeople);
-    [...wss.clients].forEach((client) => {
-      client.send(JSON.stringify({ online: onlinePeople }));
-    });
-  }
+  console.log("Client wss connected");
 
   const cookies = req.headers.cookie;
   if (cookies) {
+    // this is to clear the cookies from the its name as it is written in the token = "" form but we only want the cookies value noting else.
     const tokenCookieString = cookies
       .split(";")
-      .find((str) => str.trim().startsWith("token="));
+      .find((str) => str.startsWith("token="));
     if (tokenCookieString) {
       const token = tokenCookieString.split("=")[1];
       if (token) {
@@ -185,49 +170,46 @@ wss.on("connection", (connection, req) => {
           const { userId, username } = userData;
           connection.userId = userId;
           connection.username = username;
-          notifyAboutOnlinePeople();
         });
       }
     }
   }
 
   connection.on("message", async (message) => {
-    console.log("Received message: ", message);
     const messageData = JSON.parse(message.toString());
     const { recipient, text } = messageData;
+    console.log(messageData);
     if (recipient && text) {
-      try {
-        const messageDoc = await Message.create({
-          sender: connection.userId,
-          recipient: recipient,
-          text: text,
-        });
+      // this will return promise so we need to add await
+      const messageDoc = await Message.create({
+        sender: connection.userId,
+        recipient: recipient,
+        text: text,
+      });
 
-        [...wss.clients]
-          .filter(
-            (c) => c.userId === recipient || c.userId === connection.userId
-          )
-          .forEach((c) => {
-            c.send(
-              JSON.stringify({
-                text,
-                sender: connection.userId,
-                _id: messageDoc._id,
-                recipient,
-              })
-            );
-          });
-      } catch (error) {
-        console.error("Error saving message to database:", error);
-      }
-    } else {
-      console.error("Invalid message data:", messageData);
+      [...wss.clients]
+        .filter((c) => c.userId === recipient)
+        .forEach((c) => {
+          c.send(
+            JSON.stringify({
+              text,
+              sender: connection.userId,
+              _id: messageDoc._id,
+              recipient,
+            })
+          );
+        });
     }
   });
-
-  connection.on("close", () => {
-    notifyAboutOnlinePeople();
+  // Send online users to all clients and notify them if someone connects
+  [...wss.clients].forEach((client) => {
+    client.send(
+      JSON.stringify({
+        online: [...wss.clients].map((c) => ({
+          userId: c.userId,
+          username: c.username,
+        })),
+      })
+    );
   });
-
-  notifyAboutOnlinePeople();
 });
