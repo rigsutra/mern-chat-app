@@ -9,6 +9,8 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const ws = require("ws");
 
+// Middleware to authenticate JWT
+
 dotenv.config();
 
 const app = express();
