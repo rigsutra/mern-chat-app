@@ -5,8 +5,8 @@ const dotenv = require("dotenv");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
-const User = require("./models/User");
-const Message = require("./models/Message");
+const User = require("./api/models/User");
+const Message = require("./api/models/Message");
 const WebSocket = require("ws");
 const fs = require("fs");
 
